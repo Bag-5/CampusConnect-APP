@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CampusConnect AI 😎</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: auto;
+      padding: 20px;
+    }
+    #chatHistory {
+      background: #f3f3f3;
+      padding: 10px;
+      border: 1px solid #ccc;
+      height: 300px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+    .message { margin-bottom: 10px; }
+    .user { color: blue; font-weight: bold; }
+    .ai { color: green; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>🎓 CampusConnect AI</h2>
+
+  <!-- 📂 Upload PDF -->
+  <h3>📂 Upload PDF</h3>
+  <input type="file" id="pdfFile" accept=".pdf" />
+  <button onclick="uploadPDF()">Upload PDF</button>
+  <p><strong>Extracted Text:</strong></p>
+  <pre id="pdfText" style="white-space: pre-wrap; background: #f1f1f1; padding: 10px;"></pre>
+
+  <hr>
+
+  <!-- 💬 Chat History -->
+  <h3>💬 Chat History</h3>
+  <div id="chatHistory"></div>
+
+  <!-- 🎤 Voice Command -->
+  <h3>🎤 Ask AI with Your Voice</h3>
+  <button onclick="startListening()">Start Voice Command</button>
+
+  <!-- 💬 Text Command -->
+  <h3>💬 Or Ask with Text</h3>
+  <input type="text" id="textInput" placeholder="Type your question here..." style="width:70%; padding:8px;" />
+  <button onclick="submitText()">Ask</button>
+
+  <p><strong>You said:</strong> <span id="transcript"></span></p>
+  <p><strong>AI Reply:</strong> <span id="aiReply"></span></p>
+
+  <hr>
+
+  <!-- 🍲 Food Info -->
+  <h3>🍲 Test Food Health Benefit</h3>
+  <input type="text" id="foodInput" placeholder="Enter food name like 'Jollof Rice'" style="width:70%; padding:8px;" />
+  <button onclick="getFoodBenefits()">Check Benefits</button>
+  <p><strong>Health Benefits:</strong></p>
+  <pre id="foodResult" style="white-space: pre-wrap; background: #f9f9f9; padding: 10px;"></pre>
+
+  <hr>
+
+  <!-- 🗓️ Calendar Voice Feature -->
+  <h3>🗓️ Test Voice-to-Calendar</h3>
+  <button onclick="startCalendarVoice()">Speak Calendar Entry</button>
+  <p><strong>Saved Entry:</strong> <span id="calendarResult"></span></p>
+
+  <script>
+    const transcriptDisplay = document.getElementById("transcript");
+    const aiReplyDisplay = document.getElementById("aiReply");
+    const pdfText = document.getElementById("pdfText");
+    const textInput = document.getElementById("textInput");
+    const chatHistory = document.getElementById("chatHistory");
+
+    let isVoiceMode = false;
+
+    function speak(text) {
+      const synth = window.speechSynthesis;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en-US";
+      synth.speak(utterance);
+    }
+
+    function addToChat(role, message) {
+      const div = document.createElement("div");
+      div.classList.add("message");
+      div.innerHTML = `<span class="${role}">${role === "user" ? "You" : "AI"}:</span> ${message}`;
+      chatHistory.appendChild(div);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    async function submitText() {
+      const message = textInput.value.trim();
+      if (message !== "") {
+        isVoiceMode = false;
+        transcriptDisplay.innerText = message;
+        addToChat("user", message);
+        textInput.value = "";
+
+        const response = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message })
+        });
+
+        const data = await response.json();
+        const reply = data.response || data.error || "No reply from AI.";
+        aiReplyDisplay.innerText = reply;
+        addToChat("ai", reply);
+      }
+    }
+
+    function startListening() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = "en-US";
+      isVoiceMode = true;
+
+      recognition.onstart = () => {
+        transcriptDisplay.innerText = "Listening...🎧";
+      };
+
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        transcriptDisplay.innerText = transcript;
+        addToChat("user", transcript);
+
+        const response = await fetch("/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ voice: transcript })
+        });
+
+        const data = await response.json();
+        const reply = data.response || data.error || "No voice reply.";
+        aiReplyDisplay.innerText = reply;
+        addToChat("ai", reply);
+        speak(reply);
+        isVoiceMode = false;
+      };
+
+      recognition.onerror = (event) => {
+        transcriptDisplay.innerText = "Error: " + event.error;
+        isVoiceMode = false;
+      };
+
+      recognition.start();
+    }
+
+    async function uploadPDF() {
+      const fileInput = document.getElementById("pdfFile");
+      const file = fileInput.files[0];
+
+      if (!file) {
+        alert("Please select a PDF file first.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/upload", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await response.json();
+      if (data.extracted_text) {
+        pdfText.innerText = data.extracted_text;
+        alert("✅ PDF uploaded successfully!");
+      } else {
+        pdfText.innerText = "❌ Upload failed: " + (data.error || "Unknown error");
+      }
+    }
+
+    async function getFoodBenefits() {
+      const food = document.getElementById("foodInput").value.trim();
+      const resultDisplay = document.getElementById("foodResult");
+
+      if (!food) {
+        alert("Please enter a food name!");
+        return;
+      }
+
+      try {
+        const response = await fetch("/food-info", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ food })
+        });
+
+        const data = await response.json();
+        if (data.benefits) {
+          resultDisplay.innerText = data.benefits;
+        } else {
+          resultDisplay.innerText = "❌ Error: " + (data.error || "Unknown issue");
+        }
+      } catch (err) {
+        resultDisplay.innerText = "❌ Network error: " + err.message;
+      }
+    }
+
+    // 🗓️ Voice-to-Calendar Feature
+    function startCalendarVoice() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = "en-US";
+
+      document.getElementById("calendarResult").innerText = "Listening...🎧";
+
+      recognition.onresult = async (event) => {
+        const voiceText = event.results[0][0].transcript;
+
+        const response = await fetch("/calendar-entry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ voice: voiceText })
+        });
+
+        const data = await response.json();
+        if (data.title && data.time) {
+          document.getElementById("calendarResult").innerText = `📝 ${data.title} at ⏰ ${data.time}`;
+        } else {
+          document.getElementById("calendarResult").innerText = "❌ Error: " + (data.error || "Couldn't extract data.");
+        }
+      };
+
+      recognition.onerror = (event) => {
+        document.getElementById("calendarResult").innerText = "🎤 Error: " + event.error;
+      };
+
+      recognition.start();
+    }
+  </script>
+</body>
+</html>
